@@ -1,0 +1,378 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Freya's Catch</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Press+Start+2P&family=VT323&display=swap">
+<style>
+  /* Layout: a Win98-style program window holding the square play field; dialogs sit on top of it */
+  :root {
+    --desk: #f7a8cf;
+    --desk-dot: #fff0f7;
+    --silver: #c3c3c3;
+    --hi: #ffffff;
+    --lo: #808080;
+    --dk: #1a1a1a;
+    --title-a: #ff2d95;
+    --title-b: #7b2cbf;
+    --ink: #111111;
+    --font-pixel: "Press Start 2P", "Courier New", monospace;
+    --font-term: "VT323", "Courier New", monospace;
+    color-scheme: light;
+  }
+  [hidden] { display: none !important; }
+  html, body { height: 100%; margin: 0; }
+  body {
+    background-color: var(--desk);
+    background-image:
+      radial-gradient(var(--desk-dot) 1.5px, transparent 1.6px),
+      radial-gradient(var(--desk-dot) 1.5px, transparent 1.6px);
+    background-size: 28px 28px;
+    background-position: 0 0, 14px 14px;
+    color: var(--ink);
+    font-family: var(--font-term);
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    gap: 12px;
+    padding-left: max(16px, env(safe-area-inset-left, 0px));
+    padding-right: max(16px, env(safe-area-inset-right, 0px));
+    padding-block: 12px;
+    box-sizing: border-box;
+    overflow: hidden;
+  }
+
+  /* Bevels: raised = light top-left, dark bottom-right; sunken is the reverse */
+  .raised { background: var(--silver); box-shadow: inset -1px -1px var(--dk), inset 1px 1px var(--hi), inset -2px -2px var(--lo), inset 2px 2px #dfdfdf; }
+  .sunken { box-shadow: inset 1px 1px var(--lo), inset -1px -1px var(--hi), inset 2px 2px var(--dk), inset -2px -2px #dfdfdf; }
+
+  .win { padding: 3px; display: flex; flex-direction: column; gap: 3px; max-width: 100%; box-shadow: inset -1px -1px var(--dk), inset 1px 1px var(--hi), inset -2px -2px var(--lo), inset 2px 2px #dfdfdf, 6px 6px 0 rgba(90,20,60,.35); }
+  .titlebar {
+    background: linear-gradient(90deg, var(--title-a), var(--title-b));
+    color: #fff; display: flex; align-items: center; justify-content: space-between; gap: 8px;
+    padding: 3px 3px 3px 6px; min-height: 22px;
+    font: 10px/1 var(--font-pixel); letter-spacing: .02em;
+  }
+  .titlebar span { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; min-width: 0; text-shadow: 1px 1px 0 rgba(0,0,0,.4); }
+  .tb-btns { display: flex; gap: 2px; flex: none; }
+  .tb-btn {
+    width: 18px; height: 16px; border: 0; padding: 0; color: var(--ink);
+    font: 14px/1 var(--font-term); display: grid; place-items: center; cursor: default;
+  }
+  button.tb-btn { cursor: pointer; }
+  button.tb-btn:active { box-shadow: inset 1px 1px var(--dk), inset -1px -1px var(--hi), inset 2px 2px var(--lo); }
+
+  #wrap { position: relative; width: min(calc(100vw - 40px), calc(100vh - 130px), 720px); aspect-ratio: 1; max-width: 100%; padding: 2px; box-sizing: border-box; }
+  canvas { display: block; width: 100%; height: 100%; image-rendering: auto; }
+
+  .statusbar { display: flex; gap: 3px; font-size: 18px; line-height: 1; }
+  .statusbar > div { padding: 3px 8px 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+  .statusbar > div:first-child { flex: 1; }
+
+  /* Pause button, top right of the play field */
+  #pauseBtn {
+    position: absolute; top: 2.6%; right: 2.6%; z-index: 2;
+    width: 8.5%; aspect-ratio: 1; min-width: 36px;
+    border: 0; padding: 0; cursor: pointer;
+    font: clamp(9px, 2vmin, 13px)/1 var(--font-pixel); color: var(--ink);
+    display: grid; place-items: center;
+  }
+  #pauseBtn:active, .btn98:active { box-shadow: inset 1px 1px var(--dk), inset -1px -1px var(--hi), inset 2px 2px var(--lo), inset -2px -2px #dfdfdf; }
+  #pauseBtn:focus-visible, .btn98:focus-visible, .tb-btn:focus-visible, .pick:focus-visible { outline: 1px dotted var(--ink); outline-offset: -5px; }
+  .pick:focus-visible { outline: 2px dotted #fff; outline-offset: -6px; }
+
+  /* Pause dialog */
+  .overlay { position: absolute; inset: 2px; }
+  #pauseMenu { background: rgba(40,0,40,.35); display: grid; place-items: center; }
+  .dialog { width: min(80%, 300px); padding: 3px; display: flex; flex-direction: column; gap: 3px; box-shadow: inset -1px -1px var(--dk), inset 1px 1px var(--hi), inset -2px -2px var(--lo), inset 2px 2px #dfdfdf, 4px 4px 0 rgba(0,0,0,.35); }
+  .dialog-body { padding: 14px 16px 16px; display: flex; flex-direction: column; gap: 10px; }
+  .dialog-msg { display: flex; align-items: center; gap: 12px; font-size: 22px; line-height: 1.05; margin-bottom: 4px; }
+  .dialog-msg .icon { flex: none; width: 34px; height: 34px; border-radius: 50%; background: radial-gradient(circle at 35% 30%, #fff 0 18%, #ffd23f 20% 60%, #e0a800 62%); display: grid; place-items: center; font: 14px var(--font-pixel); color: var(--ink); box-shadow: 1px 1px 0 var(--dk); }
+  .btn98 {
+    border: 0; padding: 7px 12px 6px; cursor: pointer; color: var(--ink);
+    font: 22px/1 var(--font-term); text-align: center;
+  }
+  .btn98.primary { outline: 1px solid var(--dk); outline-offset: -1px; }
+  .btn98 u { text-decoration-thickness: 1px; text-underline-offset: 2px; }
+
+  /* Character picker uses the picker artwork as-is, with a clickable hotspot over each cat */
+  #picker img { position: absolute; inset: 0; width: 100%; height: 100%; }
+  .pick {
+    position: absolute; border: 3px solid transparent; border-radius: 16px;
+    background: transparent; cursor: pointer; padding: 0;
+    transition: background .15s, border-color .15s, transform .15s;
+  }
+  .pick:hover { background: rgba(255,255,255,.16); border-color: #fff; transform: scale(1.04); }
+
+  #pad { display: none; gap: 8px; }
+  #pad button {
+    font: 14px var(--font-pixel); color: var(--ink); border: 0; width: 72px; height: 52px;
+    touch-action: none; user-select: none; -webkit-user-select: none;
+  }
+  #pad button:active { box-shadow: inset 1px 1px var(--dk), inset -1px -1px var(--hi), inset 2px 2px var(--lo); }
+  @media (pointer: coarse) { #pad { display: flex; } .statusbar .keys { display: none; } #wrap { width: min(calc(100vw - 40px), calc(100vh - 190px)); } }
+  @media (max-width: 480px) { .titlebar { font-size: 8px; } }
+  @media (prefers-reduced-motion: reduce) { .pick { transition: none; } .pick:hover { transform: none; } }
+</style>
+</head>
+<body>
+<div class="win raised">
+  <div class="titlebar">
+    <span>&#9829; freyas_catch.exe</span>
+    <div class="tb-btns" aria-hidden="true">
+      <div class="tb-btn raised">_</div><div class="tb-btn raised">&#9633;</div><div class="tb-btn raised">&#215;</div>
+    </div>
+  </div>
+  <div id="wrap" class="sunken">
+    <canvas id="c" aria-label="Freya's Catch game" tabindex="0"></canvas>
+    <button id="pauseBtn" class="raised" aria-label="Pause" hidden>❚❚</button>
+
+    <div id="pauseMenu" class="overlay" hidden>
+      <div class="dialog raised" role="dialog" aria-label="Paused">
+        <div class="titlebar">
+          <span>paused.exe</span>
+          <div class="tb-btns"><button id="mClose" class="tb-btn raised" aria-label="Close and continue">&#215;</button></div>
+        </div>
+        <div class="dialog-body">
+          <div class="dialog-msg"><div class="icon" aria-hidden="true">!</div><div>Game paused. What do you want to do?</div></div>
+          <button id="mContinue" class="btn98 raised primary"><u>C</u>ontinue</button>
+          <button id="mSwitch" class="btn98 raised"><u>S</u>witch character</button>
+          <button id="mRestart" class="btn98 raised"><u>R</u>estart</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="picker" class="overlay" role="dialog" aria-label="Pick a character">
+      <img src="images/pick-character.svg" alt="Pick character :3">
+      <button class="pick" data-cat="cat7" style="left:8%;top:36.5%;width:33%;height:22.5%" aria-label="Grey cat"></button>
+      <button class="pick" data-cat="cat1" style="left:51.5%;top:36.5%;width:33.5%;height:22.5%" aria-label="Black cat with gold eyes"></button>
+      <button class="pick" data-cat="cat8" style="left:8%;top:62.5%;width:33%;height:22.5%" aria-label="White cat with black ears"></button>
+      <button class="pick" data-cat="cat9" style="left:51%;top:62%;width:33.5%;height:23%" aria-label="Black cat with green eyes"></button>
+    </div>
+  </div>
+  <div class="statusbar">
+    <div class="sunken keys">&larr; &rarr; move &nbsp;|&nbsp; SPACE jump &nbsp;|&nbsp; ESC pause</div>
+    <div class="sunken" id="status">Ready</div>
+  </div>
+</div>
+<div id="pad">
+  <button id="bl" class="raised" aria-label="Move left">&lt;</button>
+  <button id="bj" class="raised" aria-label="Jump">^</button>
+  <button id="br" class="raised" aria-label="Move right">&gt;</button>
+</div>
+<script>
+const SRC = {
+  cat1: "images/cat-black-gold.svg", cat7: "images/cat-grey.svg", cat8: "images/cat-white.svg", cat9: "images/cat-black-green.svg",
+  bg: "images/background.svg", worm: "images/caterpillar.svg", fish: "images/fish.svg", peach: "images/peach.svg", ship: "images/ship.svg"
+};
+const W = 576, H = 576, GROUND = 548;
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d');
+const $ = id => document.getElementById(id);
+
+function fit() {
+  const r = canvas.getBoundingClientRect();
+  const dpr = Math.min(window.devicePixelRatio || 1, 3);
+  canvas.width = Math.round(r.width * dpr);
+  canvas.height = Math.round(r.height * dpr);
+  ctx.setTransform(canvas.width / W, 0, 0, canvas.height / H, 0, 0);
+}
+window.addEventListener('resize', fit);
+
+const img = {};
+let loaded = 0;
+for (const k in SRC) {
+  const i = new Image();
+  i.onload = () => { if (++loaded === Object.keys(SRC).length) boot(); };
+  i.src = SRC[k];
+  img[k] = i;
+}
+
+// Falling object types: sprite, points, width in game units, weight (spawn chance)
+const TYPES = [
+  { key: 'worm',  pts: -5, w: 92, weight: 32 },
+  { key: 'fish',  pts: 5,  w: 82, weight: 26 },
+  { key: 'peach', pts: 5,  w: 58, weight: 28 },
+  { key: 'ship',  pts: 10, w: 96, weight: 14 },
+];
+const totalWeight = TYPES.reduce((s, t) => s + t.weight, 0);
+
+// state: 'picking' | 'playing' | 'paused'
+let state = 'picking';
+let catKey = 'cat1';
+const cat = { x: W / 2, y: GROUND, vx: 0, vy: 0, w: 130, h: 0, face: 1, onGround: true };
+const keys = { left: false, right: false };
+let items = [], pops = [], points = 0, spawnTimer = 0, elapsed = 0, last = 0, bump = 0;
+
+function aspect(i) { return i.naturalHeight / i.naturalWidth; }
+
+function resetRound() {
+  items = []; pops = []; points = 0; spawnTimer = 0.4; elapsed = 0; bump = 0;
+  cat.x = W / 2; cat.y = GROUND; cat.vy = 0; cat.onGround = true; cat.face = 1;
+  cat.h = cat.w * aspect(img[catKey]);
+  keys.left = keys.right = false;
+}
+
+function setState(s) {
+  state = s;
+  $('picker').hidden = s !== 'picking';
+  $('pauseMenu').hidden = s !== 'paused';
+  $('pauseBtn').hidden = s === 'picking';
+  $('pauseBtn').textContent = s === 'paused' ? '\u25b6' : '\u275a\u275a';
+  $('pauseBtn').setAttribute('aria-label', s === 'paused' ? 'Continue' : 'Pause');
+  $('status').textContent = s === 'picking' ? 'Pick a cat' : s === 'paused' ? 'Paused' : 'Playing';
+  keys.left = keys.right = false;
+  if (s === 'playing') canvas.focus();
+  if (s === 'paused') $('mContinue').focus();
+  if (s === 'picking') document.querySelector('.pick').focus();
+}
+
+function chooseCat(k) { catKey = k; resetRound(); setState('playing'); }
+
+document.querySelectorAll('.pick').forEach(b => b.addEventListener('click', () => chooseCat(b.dataset.cat)));
+$('pauseBtn').addEventListener('click', () => setState(state === 'paused' ? 'playing' : 'paused'));
+$('mContinue').addEventListener('click', () => setState('playing'));
+$('mClose').addEventListener('click', () => setState('playing'));
+$('mSwitch').addEventListener('click', () => setState('picking'));
+$('mRestart').addEventListener('click', () => { resetRound(); setState('playing'); });
+
+function spawn() {
+  let r = Math.random() * totalWeight, t = TYPES[0];
+  for (const ty of TYPES) { if ((r -= ty.weight) < 0) { t = ty; break; } }
+  const h = t.w * aspect(img[t.key]);
+  const speed = 95 + Math.random() * 70 + Math.min(elapsed * 1.2, 120);
+  items.push({ t, x: t.w / 2 + Math.random() * (W - t.w), y: -h, w: t.w, h, vy: speed,
+               rot: (Math.random() - .5) * .5, spin: (Math.random() - .5) * 1.2 });
+}
+
+function jump() { if (state === 'playing' && cat.onGround) { cat.vy = -560; cat.onGround = false; } }
+
+window.addEventListener('keydown', e => {
+  if (e.code === 'Escape' || e.code === 'KeyP') {
+    if (state === 'playing') setState('paused');
+    else if (state === 'paused') setState('playing');
+    e.preventDefault();
+    return;
+  }
+  if (state !== 'playing') return;
+  if (e.code === 'ArrowLeft') { keys.left = true; e.preventDefault(); }
+  else if (e.code === 'ArrowRight') { keys.right = true; e.preventDefault(); }
+  else if (e.code === 'Space') { jump(); e.preventDefault(); }
+  else if (e.code === 'ArrowUp' || e.code === 'ArrowDown') e.preventDefault();
+});
+window.addEventListener('keyup', e => {
+  if (e.code === 'ArrowLeft') keys.left = false;
+  else if (e.code === 'ArrowRight') keys.right = false;
+});
+window.addEventListener('blur', () => { keys.left = keys.right = false; if (state === 'playing') setState('paused'); });
+
+function hold(id, on, off) {
+  const b = $(id);
+  b.addEventListener('pointerdown', e => { e.preventDefault(); if (state === 'playing') on(); });
+  ['pointerup', 'pointerleave', 'pointercancel'].forEach(ev => b.addEventListener(ev, off));
+}
+hold('bl', () => keys.left = true, () => keys.left = false);
+hold('br', () => keys.right = true, () => keys.right = false);
+hold('bj', jump, () => {});
+
+function boot() {
+  resetRound();
+  fit();
+  setState('picking');
+  last = performance.now();
+  requestAnimationFrame(loop);
+}
+
+function update(dt) {
+  elapsed += dt;
+  const dir = (keys.right ? 1 : 0) - (keys.left ? 1 : 0);
+  cat.vx = dir * 300;
+  if (dir) cat.face = dir;
+  cat.x = Math.max(cat.w / 2, Math.min(W - cat.w / 2, cat.x + cat.vx * dt));
+  cat.vy += 1500 * dt;
+  cat.y += cat.vy * dt;
+  if (cat.y >= GROUND) { cat.y = GROUND; cat.vy = 0; cat.onGround = true; }
+
+  spawnTimer -= dt;
+  if (spawnTimer <= 0) { spawn(); spawnTimer = Math.max(0.45, 1.15 - elapsed * 0.006) * (0.7 + Math.random() * 0.6); }
+
+  // Cat hitbox: the body, trimmed so near-misses don't count
+  const cb = { l: cat.x - cat.w * 0.38, r: cat.x + cat.w * 0.42, t: cat.y - cat.h * 0.92, b: cat.y - cat.h * 0.1 };
+  for (const it of items) {
+    it.y += it.vy * dt; it.rot += it.spin * dt;
+    const ib = { l: it.x - it.w * .38, r: it.x + it.w * .38, t: it.y - it.h * .38, b: it.y + it.h * .38 };
+    if (!it.gone && ib.r > cb.l && ib.l < cb.r && ib.b > cb.t && ib.t < cb.b) {
+      it.gone = true;
+      points += it.t.pts;
+      bump = 1;
+      pops.push({ x: it.x, y: it.y, text: (it.t.pts > 0 ? '+' : '−') + Math.abs(it.t.pts), good: it.t.pts > 0, life: 1 });
+    }
+  }
+  items = items.filter(it => !it.gone && it.y - it.h < H + 10);
+  for (const p of pops) { p.life -= dt * 1.3; p.y -= 50 * dt; }
+  pops = pops.filter(p => p.life > 0);
+  bump = Math.max(0, bump - dt * 4);
+}
+
+function drawSprite(i, x, y, w, h, flip, rot) {
+  ctx.save();
+  ctx.translate(x, y);
+  if (rot) ctx.rotate(rot);
+  if (flip) ctx.scale(-1, 1);
+  ctx.drawImage(i, -w / 2, -h / 2, w, h);
+  ctx.restore();
+}
+
+function draw() {
+  ctx.drawImage(img.bg, 0, 0, W, H);
+  if (state === 'picking') return;
+
+  for (const it of items) drawSprite(img[it.t.key], it.x, it.y, it.w, it.h, false, it.rot);
+
+  // soft shadow on the ground, shrinks as the cat jumps
+  const lift = Math.min(1, (GROUND - cat.y) / 160);
+  ctx.fillStyle = `rgba(0,40,20,${0.28 * (1 - lift * 0.6)})`;
+  ctx.beginPath();
+  ctx.ellipse(cat.x, GROUND - 4, cat.w * 0.4 * (1 - lift * 0.4), 7, 0, 0, Math.PI * 2);
+  ctx.fill();
+
+  const squash = cat.onGround ? 1 : 1.04;
+  drawSprite(img[catKey], cat.x, cat.y - cat.h / 2, cat.w / squash, cat.h * squash, cat.face < 0, 0);
+
+  for (const p of pops) {
+    ctx.globalAlpha = Math.max(0, p.life);
+    ctx.font = '18px "Press Start 2P", "Courier New", monospace';
+    ctx.textAlign = 'center';
+    ctx.fillStyle = '#000000';
+    ctx.fillText(p.text, p.x + 2, p.y + 2);
+    ctx.fillStyle = p.good ? '#39ff14' : '#ff2d55';
+    ctx.fillText(p.text, p.x, p.y);
+    ctx.globalAlpha = 1;
+  }
+
+  // Points counter, top left
+  const s = 1 + bump * 0.12;
+  ctx.save();
+  ctx.translate(22, 22);
+  ctx.scale(s, s);
+  ctx.textAlign = 'left'; ctx.textBaseline = 'top';
+  ctx.font = '18px "Press Start 2P", "Courier New", monospace';
+  const label = 'Points: ' + points;
+  const tw = ctx.measureText(label).width;
+  ctx.fillStyle = '#000080'; ctx.fillRect(-8, -7, tw + 16, 32);
+  ctx.fillStyle = '#ffffff'; ctx.fillRect(-8, -7, tw + 16, 2); ctx.fillRect(-8, -7, 2, 32);
+  ctx.fillStyle = '#000000'; ctx.fillRect(-8, 23, tw + 16, 2); ctx.fillRect(tw + 6, -7, 2, 32);
+  ctx.fillStyle = '#ffff00';
+  ctx.fillText(label, 0, 0);
+  ctx.restore();
+}
+
+function loop(now) {
+  const dt = Math.min(0.05, (now - last) / 1000);
+  last = now;
+  if (state === 'playing') update(dt);
+  draw();
+  requestAnimationFrame(loop);
+}
+</script>
+</body>
+</html>
